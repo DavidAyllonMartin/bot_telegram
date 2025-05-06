@@ -8,33 +8,42 @@ from selenium.webdriver.support import expected_conditions as EC
 import asyncio
 from telegram.constants import ParseMode
 from database import get_session
+from models.championship import Championship
 from service import championship_service, player_service, bga_service
 import logging
 from constants import LOG_DRIVER_CREATION_SUCCESS, LOG_ERROR, LOG_GAME_STATUS, LOG_HTML_RETRIEVED, LOG_JSON_DECODE_ERROR, LOG_JSON_EXTRACTION_START, LOG_JSON_MARKERS_NOT_FOUND, LOG_JSONS_NOT_FOUND, LOG_NEW_TURN, LOG_TURN_PLAYER, DatabaseConstant, LOG_LOADING_URL
 
 logger = logging.getLogger(__name__)
 
-def get_current_player(url):
+def get_current_players(championship: Championship):
     driver = bga_service.create_driver()
     try:
-        logger.info(LOG_LOADING_URL.format(url=url))
-        driver.get(url)
-        main_title = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "pagemaintitletext"))
+        logger.info(LOG_LOADING_URL.format(url=championship.championshipurl))
+        driver.get(championship.championshipurl)
+
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "player_boards"))
         )
 
-        try:
-            player_name_element = main_title.find_element(By.CLASS_NAME, "playername")
-            player_name = player_name_element.text.strip()
-            logger.info(LOG_TURN_PLAYER.format(player_name=player_name))
-            return player_name
-        except Exception:
-            status_message = main_title.text.strip()
-            logger.info(LOG_GAME_STATUS.format(status_message=status_message))
-            return None
+        active_players = []
+
+        for player in championship.players:
+            idbga = player.idbga
+            element_id = f"avatar_active_wrap_{idbga}"
+            try:
+                emblem_element = driver.find_element(By.ID, element_id)
+                style = emblem_element.get_attribute("style")
+                if "none" not in style:
+                    logger.info(LOG_TURN_PLAYER.format(player_name=player.name))
+                    active_players.append(player)
+            except Exception as e:
+                logger.warning(f"No se encontró el elemento con id {element_id}: {e}")
+
+        return active_players
+
     except Exception as e:
         logger.error(LOG_ERROR.format(error=e))
-        return None
+        return []
     finally:
         driver.quit()
 
@@ -48,27 +57,48 @@ async def check_all_championship_turns(app):
             with get_session() as session:
                 championship = championship_service.get_championship_by_id(session, championship_id)
 
-                nick = bga_service.get_current_player(championship.championshipurl)
+                active_players = bga_service.get_current_players(championship)
 
-                if not nick or (championship.lastplayer and nick == championship.lastplayer.nickbga):
+                if not active_players:
                     return
 
-                player = player_service.get_player_by_nickbga(session, nick)
-                logger.info(LOG_NEW_TURN.format(championship_url=championship.championshipurl, nick=nick))
+                elif len(active_players) == 1:
+                    player = active_players[0]
 
-                if not player or not player.idtelegram or not player.notify:
-                    text = DatabaseConstant.TURN_NOTIFICATION.format(nick=nick)
-                else:
-                    text = DatabaseConstant.TURN_NOTIFICATION_WITH_LINK.format(user_id=player.idtelegram, nick=nick)
+                    if player == championship.lastplayer:
+                        return
 
-                championship.lastplayer = player
-                session.commit()
+                    logger.info(LOG_NEW_TURN.format(championship_url=championship.championshipurl, nick=player.nickbga))
+            
+                    text = DatabaseConstant.TURN_NOTIFICATION.format(nick=format_player_link(player))
 
-                await app.bot.send_message(
+                    championship.lastplayer = player
+                    session.commit()
+
+                    await app.bot.send_message(
                     chat_id=championship.idchat,
                     text=text,
                     parse_mode=ParseMode.HTML
-                )
+                    )
+
+                else:
+                    player = player_service.get_player_by_nickbga(session, "ALL_PLAYERS")
+
+                    if player == championship.lastplayer:
+                        return
+                    
+                    formatted_nicks = ' '.join(format_player_link(player) for player in active_players)
+
+                    text = DatabaseConstant.TURN_NOTIFICATION.format(nick=formatted_nicks)
+
+                    championship.lastplayer = player
+                    session.commit()
+
+                    await app.bot.send_message(
+                        chat_id=championship.idchat,
+                        text=text,
+                        parse_mode=ParseMode.HTML
+                    )
 
         except Exception as e:
             logger.error(f"[ERROR procesando campeonato ID {championship_id}]: {e}")
@@ -166,3 +196,9 @@ def is_valid_url(url: str) -> bool:
         return False
 
     return True
+
+def format_player_link(player) -> str:
+    if not player.idtelegram or not player.notify:
+        return player.nickbga
+    else:
+        return f"<a href='tg://user?id={player.idtelegram}'>{player.nickbga}</a>"

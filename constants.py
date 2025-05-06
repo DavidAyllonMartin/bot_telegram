@@ -23,7 +23,6 @@ class DatabaseConstant:
     PLAYER_LIST_HEADER = None
     PLAYER_LINE = None
     TURN_NOTIFICATION = None
-    TURN_NOTIFICATION_WITH_LINK = None
 
     @classmethod
     def load_constants(cls):
@@ -49,7 +48,6 @@ class DatabaseConstant:
             cls.PLAYER_LIST_HEADER = app_config_service.get_config_value(session, 'PLAYER_LIST_HEADER')
             cls.PLAYER_LINE = app_config_service.get_config_value(session, 'PLAYER_LINE')
             cls.TURN_NOTIFICATION = app_config_service.get_config_value(session, 'TURN_NOTIFICATION')
-            cls.TURN_NOTIFICATION_WITH_LINK = app_config_service.get_config_value(session, 'TURN_NOTIFICATION_WITH_LINK')
 
 LOG_LOADING_URL = "🌐 Cargando: {url}"
 LOG_TURN_PLAYER = "🎯 Le toca jugar a: {player_name}"
@@ -73,6 +71,6 @@ COMMAND_STATUS = "estado"
 COMMAND_ACTIVATE_NOTIFICATIONS = "activar_notificaciones"
 COMMAND_DEACTIVATE_NOTIFICATIONS = "desactivar_notificaciones"
 COMMAND_CANCEL = "cancelar"
-COMMAND_DELETE_CHAMPIONSHIP = "eliminar_campeonato"
+COMMAND_DELETE_CHAMPIONSHIP = "eliminar_url"
 
 ASK_LINK = range(1)
