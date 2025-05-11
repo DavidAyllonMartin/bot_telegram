@@ -113,7 +113,7 @@ async def receive_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         championship = championship_service.save_championship(session, champ_data)
 
-        jsonObj = bga_service.extract_json_from_url(url)
+        jsonObj = bga_service.extract_setup_json_from_url(url)
         players_json = jsonObj.get("players", {})
 
         existing_players = {

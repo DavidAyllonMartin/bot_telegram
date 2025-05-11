@@ -1,51 +1,59 @@
 import json
 import requests
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import asyncio
 from telegram.constants import ParseMode
 from database import get_session
 from models.championship import Championship
-from service import championship_service, player_service, bga_service
+from service import championship_service, player_service
 import logging
-from constants import LOG_DRIVER_CREATION_SUCCESS, LOG_ERROR, LOG_GAME_STATUS, LOG_HTML_RETRIEVED, LOG_JSON_DECODE_ERROR, LOG_JSON_EXTRACTION_START, LOG_JSON_MARKERS_NOT_FOUND, LOG_JSONS_NOT_FOUND, LOG_NEW_TURN, LOG_TURN_PLAYER, DatabaseConstant, LOG_LOADING_URL
+from constants import (
+    LOG_ERROR,
+    LOG_HTML_RETRIEVED,
+    LOG_JSON_DECODE_ERROR,
+    LOG_JSON_EXTRACTION_START,
+    LOG_JSON_MARKERS_NOT_FOUND,
+    LOG_JSONS_NOT_FOUND,
+    LOG_NEW_TURN,
+    LOG_TURN_PLAYER,
+    DatabaseConstant,
+    LOG_LOADING_URL,
+)
 
 logger = logging.getLogger(__name__)
 
 def get_current_players(championship: Championship):
-    driver = bga_service.create_driver()
     try:
-        logger.info(LOG_LOADING_URL.format(url=championship.championshipurl))
-        driver.get(championship.championshipurl)
+        url = championship.championshipurl
+        logger.info(LOG_LOADING_URL.format(url=url))
 
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "player_boards"))
-        )
+        setup_json = extract_setup_json_from_url(url)
+        if not setup_json:
+            return []
+        
+        gamestate = setup_json.get("gamestate", {})
+        multiactive_ids = gamestate.get("multiactive", None)
+        
+        if multiactive_ids is not None:
+            active_ids = [int(pid) for pid in multiactive_ids]
+        else:
+            active_player = gamestate.get("active_player")
+            active_ids = [int(active_player)] if active_player else []
 
-        active_players = []
+        logger.info(f"Jugadores activos: {active_ids}")
 
-        for player in championship.players:
-            idbga = player.idbga
-            element_id = f"avatar_active_wrap_{idbga}"
-            try:
-                emblem_element = driver.find_element(By.ID, element_id)
-                style = emblem_element.get_attribute("style")
-                if "none" not in style:
-                    logger.info(LOG_TURN_PLAYER.format(player_name=player.name))
-                    active_players.append(player)
-            except Exception as e:
-                logger.warning(f"No se encontró el elemento con id {element_id}: {e}")
+        active_players = [
+            player for player in championship.players if player.idbga in active_ids
+        ]
+
+        for player in active_players:
+            logger.info(LOG_TURN_PLAYER.format(player_name=player.nickbga))
 
         return active_players
 
     except Exception as e:
         logger.error(LOG_ERROR.format(error=e))
         return []
-    finally:
-        driver.quit()
+
 
 async def check_all_championship_turns(app):
     with get_session() as session:
@@ -57,7 +65,7 @@ async def check_all_championship_turns(app):
             with get_session() as session:
                 championship = championship_service.get_championship_by_id(session, championship_id)
 
-                active_players = bga_service.get_current_players(championship)
+                active_players = get_current_players(championship)
 
                 if not active_players:
                     return
@@ -76,9 +84,9 @@ async def check_all_championship_turns(app):
                     session.commit()
 
                     await app.bot.send_message(
-                    chat_id=championship.idchat,
-                    text=text,
-                    parse_mode=ParseMode.HTML
+                        chat_id=championship.idchat,
+                        text=text,
+                        parse_mode=ParseMode.HTML
                     )
 
                 else:
@@ -87,7 +95,7 @@ async def check_all_championship_turns(app):
                     if player == championship.lastplayer:
                         return
                     
-                    formatted_nicks = ' '.join(format_player_link(player) for player in active_players)
+                    formatted_nicks = format_player_list(active_players)
 
                     text = DatabaseConstant.TURN_NOTIFICATION.format(nick=formatted_nicks)
 
@@ -104,33 +112,6 @@ async def check_all_championship_turns(app):
             logger.error(f"[ERROR procesando campeonato ID {championship_id}]: {e}")
 
     await asyncio.gather(*(process_championship(cid) for cid in championship_ids))
-
-def extract_json_from_url(url):
-    html_content = get_html(url)
-    if html_content:
-        extracted_str = extract_str_json_raw(html_content)
-        if extracted_str:
-            json_strings = extract_jsons(extracted_str)
-            json_object = transform_json(json_strings[1])
-            return json_object
-    return None
-
-def create_driver():
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--window-size=1920x1080")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--log-level=3")
-
-    try:
-        driver = webdriver.Chrome(options=options)
-        logger.info(LOG_DRIVER_CREATION_SUCCESS)
-        return driver
-    except Exception as e:
-        logger.error(LOG_ERROR.format(error=e))
-        raise
 
 def get_html(url):
     try:
@@ -180,7 +161,18 @@ def transform_json(json_str):
     except json.JSONDecodeError as e:
         logger.error(LOG_JSON_DECODE_ERROR.format(error=e))
         return None
-    
+
+def extract_setup_json_from_url(url):
+    html_content = get_html(url)
+    if html_content:
+        extracted_str = extract_str_json_raw(html_content)
+        if extracted_str:
+            json_strings = extract_jsons(extracted_str)
+            if len(json_strings) > 1:
+                json_object = transform_json(json_strings[1])
+                return json_object
+    return None
+
 from urllib.parse import urlparse
 
 def is_valid_url(url: str) -> bool:
@@ -202,3 +194,14 @@ def format_player_link(player) -> str:
         return player.nickbga
     else:
         return f"<a href='tg://user?id={player.idtelegram}'>{player.nickbga}</a>"
+    
+def format_player_list(players):
+    names = [format_player_link(player) for player in players]
+    if len(names) == 0:
+        return ""
+    elif len(names) == 1:
+        return names[0]
+    elif len(names) == 2:
+        return f"{names[0]} y {names[1]}"
+    else:
+        return f"{', '.join(names[:-1])} y {names[-1]}"
