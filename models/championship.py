@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, TIMESTAMP, ForeignKey, event
+from sqlalchemy import Boolean, Column, Integer, BigInteger, String, TIMESTAMP, ForeignKey, event
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .base import Base
@@ -10,6 +10,8 @@ class Championship(Base):
     idchampionship = Column(Integer, primary_key=True, autoincrement=True)
     idchat = Column(BigInteger)
     championshipurl = Column(String(255))
+    notify = Column(Boolean, default=True)
+
 
     lastplayer_id = Column(Integer, ForeignKey('player.idplayer'), nullable=True)
     lastplayer = relationship('Player', foreign_keys=[lastplayer_id])

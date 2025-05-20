@@ -1,4 +1,5 @@
 import json
+from bs4 import BeautifulSoup
 import requests
 import asyncio
 from telegram.constants import ParseMode
@@ -15,8 +16,7 @@ from constants import (
     LOG_JSONS_NOT_FOUND,
     LOG_NEW_TURN,
     LOG_TURN_PLAYER,
-    DatabaseConstant,
-    LOG_LOADING_URL,
+    LOG_LOADING_URL
 )
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,6 @@ def get_current_players(championship: Championship):
         logger.error(LOG_ERROR.format(error=e))
         return []
 
-
 async def check_all_championship_turns(app):
     with get_session() as session:
         championships = championship_service.get_all_championships(session)
@@ -64,6 +63,9 @@ async def check_all_championship_turns(app):
         try:
             with get_session() as session:
                 championship = championship_service.get_championship_by_id(session, championship_id)
+
+                if not championship.notify:
+                    return
 
                 active_players = get_current_players(championship)
 
@@ -77,8 +79,8 @@ async def check_all_championship_turns(app):
                         return
 
                     logger.info(LOG_NEW_TURN.format(championship_url=championship.championshipurl, nick=player.nickbga))
-            
-                    text = DatabaseConstant.TURN_NOTIFICATION.format(nick=format_player_link(player))
+
+                    text = f"🎲 ¡Turno de {format_player_link(player)}!"
 
                     championship.lastplayer = player
                     session.commit()
@@ -97,7 +99,7 @@ async def check_all_championship_turns(app):
                     
                     formatted_nicks = format_player_list(active_players)
 
-                    text = DatabaseConstant.TURN_NOTIFICATION.format(nick=formatted_nicks)
+                    text = f"🎲 ¡Turno de {formatted_nicks}!"
 
                     championship.lastplayer = player
                     session.commit()
@@ -205,3 +207,22 @@ def format_player_list(players):
         return f"{names[0]} y {names[1]}"
     else:
         return f"{', '.join(names[:-1])} y {names[-1]}"
+    
+def get_championship_url(table_code: str) -> str | None:
+    try:
+        url = f"https://boardgamearena.com/heat?table={table_code}"
+        response = requests.get(url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        view_end_btn = soup.find(id="view_end_btn")
+
+        if view_end_btn and view_end_btn.has_attr('href'):
+            href = view_end_btn['href']
+            return f"https://boardgamearena.com{href}"
+        else:
+            return None
+    except Exception as e:
+        logger.error(f"No se pudo obtener la URL del campeonato: {e}")
+        return None
