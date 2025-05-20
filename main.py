@@ -2,7 +2,7 @@ import logging
 import asyncio
 from telegram.ext import (ApplicationBuilder, CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, filters)
 from apscheduler.schedulers.background import BackgroundScheduler
-from bot import (CONFIRM_ADD, championship_status, confirm_add_championship, disable_group_notifications, enable_group_notifications, help_command, link_player, start_command, unlink_player, link_buttons_handler, start_setlink, receive_link, cancel, enable_player_mentions, disable_player_mentions, delete_championship)
+from bot import (championship_status, disable_group_notifications, enable_group_notifications, help_command, link_player, start_command, unlink_player, link_buttons_handler, start_setlink, receive_link, cancel, enable_player_mentions, disable_player_mentions, delete_championship)
 from service import bga_service
 from config import BOT_TOKEN, setup_logging
 from constants import *
@@ -42,7 +42,6 @@ def main():
         entry_points=[CommandHandler(COMMAND_ESTABLISH_URL, start_setlink)],
         states={
             ASK_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link)],
-            CONFIRM_ADD: [CallbackQueryHandler(confirm_add_championship)]
         },
         fallbacks=[CommandHandler(COMMAND_CANCEL, cancel)],
     )

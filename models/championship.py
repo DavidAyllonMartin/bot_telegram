@@ -9,6 +9,7 @@ class Championship(Base):
 
     idchampionship = Column(Integer, primary_key=True, autoincrement=True)
     idchat = Column(BigInteger)
+    idtopic = Column(BigInteger, nullable=True)
     championshipurl = Column(String(255))
     notify = Column(Boolean, default=True)
 

@@ -43,6 +43,11 @@ def get_championship_by_idchat(session: Session, idchat: int):
         Championship.idchat == idchat
     ).first()
 
+def get_championship_by_idchat_and_idtopic(session: Session, idchat: int, idtopic: int):
+    return session.query(Championship).options(joinedload(Championship.players)).filter(
+        Championship.idchat == idchat,
+        Championship.idtopic == idtopic
+    ).first()
 
 def delete_championship(session: Session, champ_id: int):
     champ = get_championship_by_id(session, champ_id)
